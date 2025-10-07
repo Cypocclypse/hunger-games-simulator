@@ -4,6 +4,7 @@ const socketIo = require('socket.io');
 const multer = require('multer');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const AnimalModelDatabase = require('./animalModels.js');
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +29,9 @@ const upload = multer({
 // Serve static files
 app.use(express.static(__dirname));
 
+// Initialize animal database for server-side tracking
+const animalDatabase = new AnimalModelDatabase();
+
 // Game state
 let gameState = {
     players: new Map(),
@@ -38,7 +42,8 @@ let gameState = {
     countdownActive: false,
     animals: [],
     items: [],
-    spectators: new Set()
+    spectators: new Set(),
+    selectedAnimals: new Set() // Track selected animals
 };
 
 // Districts (12 districts like in the books)
@@ -262,19 +267,30 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // Check if animal is already taken
+        if (gameState.selectedAnimals.has(playerData.animalId)) {
+            socket.emit('animalTaken', { animalId: playerData.animalId });
+            return;
+        }
+
         const player = {
             id: socket.id,
             name: playerData.name,
-            image: playerData.image,
+            animalId: playerData.animalId,
+            animalData: playerData.animalData,
             socketId: socket.id
         };
         
+        // Reserve the animal
+        gameState.selectedAnimals.add(playerData.animalId);
+        
         gameState.players.set(socket.id, player);
         
-        // Broadcast updated player list
+        // Broadcast updated player list and selected animals
         io.emit('playersUpdate', {
             players: Array.from(gameState.players.values()),
-            count: gameState.players.size
+            count: gameState.players.size,
+            selectedAnimals: Array.from(gameState.selectedAnimals)
         });
         
         socket.emit('joinedGame', player);
@@ -444,12 +460,20 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log('Player disconnected:', socket.id);
+        
+        // Release the animal if player had selected one
+        const player = gameState.players.get(socket.id);
+        if (player && player.animalId) {
+            gameState.selectedAnimals.delete(player.animalId);
+        }
+        
         gameState.players.delete(socket.id);
         gameState.spectators.delete(socket.id);
         
         io.emit('playersUpdate', {
             players: Array.from(gameState.players.values()),
-            count: gameState.players.size
+            count: gameState.players.size,
+            selectedAnimals: Array.from(gameState.selectedAnimals)
         });
         
         if (gameState.gameActive) {
@@ -583,7 +607,8 @@ function checkGameEnd() {
                 countdownActive: false,
                 animals: [],
                 items: [],
-                spectators: new Set()
+                spectators: new Set(),
+                selectedAnimals: new Set() // Reset animal selections
             };
         }, 5000);
     }

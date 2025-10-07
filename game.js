@@ -12,6 +12,16 @@ class HungerGamesClient {
         this.selectedItemIndex = 0;
         this.isMobile = this.detectMobile();
         
+        // Animal Selection System
+        this.animalDatabase = new AnimalModelDatabase();
+        this.animalGenerator = new AnimalModelGenerator();
+        this.selectedAnimal = null;
+        this.previewScene = null;
+        this.previewCamera = null;
+        this.previewRenderer = null;
+        this.currentCategory = 'all';
+        this.currentSearch = '';
+        
         // 3D Engine Components
         this.scene = null;
         this.camera = null;
@@ -44,6 +54,15 @@ class HungerGamesClient {
     setupSocketListeners() {
         this.socket.on('playersUpdate', (data) => {
             this.updatePlayersList(data.players, data.count);
+            if (data.selectedAnimals) {
+                this.updateAnimalAvailability(data.selectedAnimals);
+            }
+        });
+
+        this.socket.on('animalTaken', (data) => {
+            alert(`The ${data.animalId} has already been selected by another player. Please choose a different animal.`);
+            this.selectedAnimal = null;
+            this.displayAnimals();
         });
 
         this.socket.on('joinedGame', (player) => {
@@ -130,10 +149,8 @@ class HungerGamesClient {
             this.joinGame();
         });
 
-        // Image preview
-        document.getElementById('playerImage').addEventListener('change', (e) => {
-            this.previewImage(e.target.files[0]);
-        });
+        // Animal selection system
+        this.setupAnimalSelector();
 
         // Start game button
         document.getElementById('startGame').addEventListener('click', () => {
@@ -341,35 +358,196 @@ class HungerGamesClient {
         this.renderer.setSize(container.clientWidth, container.clientHeight);
     }
 
-    previewImage(file) {
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const preview = document.getElementById('imagePreview');
-                preview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
-            };
-            reader.readAsDataURL(file);
+    setupAnimalSelector() {
+        this.setupAnimalPreview();
+        this.setupSearchAndFilters();
+        this.displayAnimals();
+    }
+
+    setupAnimalPreview() {
+        // Setup 3D preview canvas for selected animal
+        const canvas = document.getElementById('animalPreviewCanvas');
+        this.previewRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+        this.previewRenderer.setSize(150, 150);
+        this.previewRenderer.shadowMap.enabled = true;
+        this.previewRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Preview scene
+        this.previewScene = new THREE.Scene();
+
+        // Preview camera
+        this.previewCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+        this.previewCamera.position.set(2, 2, 2);
+        this.previewCamera.lookAt(0, 0.5, 0);
+
+        // Preview lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        this.previewScene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 5);
+        directionalLight.castShadow = true;
+        this.previewScene.add(directionalLight);
+
+        // Preview animation loop
+        const animatePreview = () => {
+            requestAnimationFrame(animatePreview);
+            
+            // Rotate the selected animal slowly
+            if (this.selectedAnimal && this.previewScene.children.length > 2) {
+                this.previewScene.children[2].rotation.y += 0.01;
+            }
+            
+            this.previewRenderer.render(this.previewScene, this.previewCamera);
+        };
+        animatePreview();
+    }
+
+    setupSearchAndFilters() {
+        // Search functionality
+        const searchInput = document.getElementById('animalSearch');
+        searchInput.addEventListener('input', (e) => {
+            this.currentSearch = e.target.value;
+            this.displayAnimals();
+        });
+
+        // Category filters
+        document.querySelectorAll('.category-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.currentCategory = btn.dataset.category;
+                this.displayAnimals();
+            });
+        });
+    }
+
+    displayAnimals() {
+        const grid = document.getElementById('animalGrid');
+        grid.innerHTML = '';
+
+        let animals;
+        if (this.currentCategory === 'all') {
+            animals = this.currentSearch ? 
+                this.animalDatabase.searchAnimals(this.currentSearch) : 
+                this.animalDatabase.getAvailableAnimals();
+        } else {
+            animals = this.animalDatabase.getAnimalsByCategory(this.currentCategory);
+            if (this.currentSearch) {
+                animals = animals.filter(animal => 
+                    animal.name.toLowerCase().includes(this.currentSearch.toLowerCase())
+                );
+            }
         }
+
+        animals.forEach(animal => {
+            const card = document.createElement('div');
+            card.className = 'animal-card';
+            if (this.selectedAnimal && this.selectedAnimal.id === animal.id) {
+                card.classList.add('selected');
+            }
+
+            card.innerHTML = `
+                <div class="animal-preview-mini" style="background-color: ${animal.color};">
+                    ${this.getAnimalEmoji(animal)}
+                </div>
+                <h4>${animal.name}</h4>
+                <p>${animal.category}${animal.subcategory ? ' - ' + animal.subcategory : ''}</p>
+            `;
+
+            card.addEventListener('click', () => {
+                this.selectAnimal(animal);
+            });
+
+            grid.appendChild(card);
+        });
+
+        // Update display count
+        const count = animals.length;
+        if (count === 0) {
+            grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #bdc3c7; padding: 2rem;">No animals found matching your search.</div>';
+        }
+    }
+
+    getAnimalEmoji(animal) {
+        // Simple emoji mapping for visual preview
+        const emojiMap = {
+            // Mammals
+            'lion': '🦁', 'tiger': '🐅', 'leopard': '🐆', 'cheetah': '🐆', 'elephant': '🐘',
+            'bear': '🐻', 'wolf': '🐺', 'fox': '🦊', 'deer': '🦌', 'horse': '🐎',
+            'zebra': '🦓', 'giraffe': '🦒', 'rhinoceros': '🦏', 'hippopotamus': '🦛',
+            'monkey': '🐒', 'gorilla': '🦍', 'chimpanzee': '🐒', 'orangutan': '🦧',
+            
+            // Birds
+            'eagle': '🦅', 'owl': '🦉', 'peacock': '🦚', 'parrot': '🦜', 'penguin': '🐧',
+            'duck': '🦆', 'swan': '🦢', 'flamingo': '🦩', 'ostrich': '🐦',
+            
+            // Reptiles
+            'snake': '🐍', 'lizard': '🦎', 'crocodile': '🐊', 'turtle': '🐢',
+            
+            // Fish
+            'shark': '🦈', 'fish': '🐠',
+            
+            // Arthropods
+            'spider': '🕷️', 'scorpion': '🦂', 'crab': '🦀', 'lobster': '🦞',
+            
+            // Mythical
+            'dragon': '🐲', 'unicorn': '🦄'
+        };
+        
+        return emojiMap[animal.id] || '🐾';
+    }
+
+    selectAnimal(animal) {
+        // Update selection in database
+        if (this.selectedAnimal) {
+            this.animalDatabase.releaseAnimal(this.selectedAnimal.id);
+        }
+        
+        this.selectedAnimal = animal;
+        this.animalDatabase.selectAnimal(animal.id);
+        
+        // Update UI
+        document.querySelectorAll('.animal-card').forEach(card => card.classList.remove('selected'));
+        event.currentTarget.classList.add('selected');
+        
+        // Show selected animal preview
+        this.showAnimalPreview(animal);
+    }
+
+    showAnimalPreview(animal) {
+        const selectedDiv = document.getElementById('selectedAnimal');
+        selectedDiv.style.display = 'block';
+        
+        document.getElementById('selectedAnimalName').textContent = animal.name;
+        document.getElementById('selectedAnimalCategory').textContent = 
+            `${animal.category}${animal.subcategory ? ' - ' + animal.subcategory : ''}`;
+
+        // Clear previous preview model
+        while (this.previewScene.children.length > 2) {
+            this.previewScene.remove(this.previewScene.children[2]);
+        }
+
+        // Add new 3D model to preview
+        const animalModel = this.animalGenerator.createPreviewModel(animal);
+        this.previewScene.add(animalModel);
     }
 
     joinGame() {
         const name = document.getElementById('playerName').value.trim();
-        const imageFile = document.getElementById('playerImage').files[0];
 
-        if (!name || !imageFile) {
-            alert('Please enter your name and select an image.');
+        if (!name || !this.selectedAnimal) {
+            alert('Please enter your name and select an animal.');
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const playerData = {
-                name: name,
-                image: e.target.result
-            };
-            this.socket.emit('joinGame', playerData);
+        const playerData = {
+            name: name,
+            animalId: this.selectedAnimal.id,
+            animalData: this.selectedAnimal
         };
-        reader.readAsDataURL(imageFile);
+        
+        this.socket.emit('joinGame', playerData);
     }
 
     updatePlayersList(players, count) {
@@ -381,9 +559,16 @@ class HungerGamesClient {
         players.forEach(player => {
             const playerDiv = document.createElement('div');
             playerDiv.className = 'player-item';
+            
+            const animalEmoji = this.getAnimalEmoji(player.animalData || { id: 'unknown' });
             playerDiv.innerHTML = `
-                <img src="${player.image}" alt="${player.name}">
-                <span>${player.name}</span>
+                <div class="player-avatar" style="background-color: ${player.animalData?.color || '#8B4513'};">
+                    ${animalEmoji}
+                </div>
+                <div class="player-info">
+                    <span class="player-name">${player.name}</span>
+                    <span class="player-animal">${player.animalData?.name || 'Unknown Animal'}</span>
+                </div>
             `;
             playersList.appendChild(playerDiv);
         });
@@ -394,6 +579,19 @@ class HungerGamesClient {
             startButton.style.display = 'block';
         } else {
             startButton.style.display = 'none';
+        }
+    }
+
+    updateAnimalAvailability(selectedAnimals) {
+        // Update the animal database with currently selected animals
+        this.animalDatabase.resetSelections();
+        selectedAnimals.forEach(animalId => {
+            this.animalDatabase.selectAnimal(animalId);
+        });
+        
+        // Refresh the display if we're still in the lobby
+        if (document.getElementById('lobby').classList.contains('active')) {
+            this.displayAnimals();
         }
     }
 
@@ -566,11 +764,18 @@ class HungerGamesClient {
         
         // Reset form
         document.getElementById('playerForm').reset();
-        document.getElementById('imagePreview').innerHTML = '';
+        
+        // Reset animal selection
+        this.selectedAnimal = null;
+        this.animalDatabase.resetSelections();
+        document.getElementById('selectedAnimal').style.display = 'none';
+        this.displayAnimals();
         
         this.currentPlayer = null;
         this.gameState = null;
         this.spectatorMode = false;
+        this.gameStarted = false;
+        this.countdownActive = false;
     }
 
     updatePlayerInfo() {
@@ -963,31 +1168,35 @@ class HungerGamesClient {
         
         const playerGroup = new THREE.Group();
         
-        // Create humanoid body
-        const bodyGeometry = new THREE.CapsuleGeometry(1, 3);
-        const bodyMaterial = new THREE.MeshPhongMaterial({ 
-            color: player.id === this.socket.id ? 0xe74c3c : 0x3498db 
-        });
-        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-        body.position.set(0, 2, 0);
-        body.castShadow = true;
-        playerGroup.add(body);
-        
-        // Head
-        const headGeometry = new THREE.SphereGeometry(0.8);
-        const headMaterial = new THREE.MeshPhongMaterial({ color: 0xFFDBB3 }); // Skin tone
-        const head = new THREE.Mesh(headGeometry, headMaterial);
-        head.position.set(0, 4.5, 0);
-        head.castShadow = true;
-        playerGroup.add(head);
-        
-        // Apply player image as texture if available
-        if (player.image) {
-            const textureLoader = new THREE.TextureLoader();
-            textureLoader.load(player.image, (texture) => {
-                head.material.map = texture;
-                head.material.needsUpdate = true;
+        // Create 3D animal model instead of humanoid
+        if (player.animalData) {
+            const animalModel = this.animalGenerator.createAnimalModel(player.animalData);
+            
+            // Add highlight for current player
+            if (player.id === this.socket.id) {
+                const highlightGeometry = new THREE.SphereGeometry(2, 16, 8);
+                const highlightMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xe74c3c,
+                    transparent: true,
+                    opacity: 0.3,
+                    wireframe: true
+                });
+                const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
+                highlight.position.y = 1;
+                playerGroup.add(highlight);
+            }
+            
+            playerGroup.add(animalModel);
+        } else {
+            // Fallback to basic model if no animal data
+            const bodyGeometry = new THREE.CapsuleGeometry(0.5, 1.5);
+            const bodyMaterial = new THREE.MeshPhongMaterial({ 
+                color: player.id === this.socket.id ? 0xe74c3c : 0x3498db 
             });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.set(0, 1, 0);
+            body.castShadow = true;
+            playerGroup.add(body);
         }
         
         // Name tag
