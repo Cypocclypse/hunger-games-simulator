@@ -8,8 +8,17 @@ class HungerGamesClient {
         this.canvas = null;
         this.ctx = null;
         this.spectatorMode = false;
+        this.countdownActive = false;
+        this.gameStarted = false;
+        this.inventory = [];
+        this.selectedItemIndex = 0;
+        this.isMobile = this.detectMobile();
         
         this.init();
+    }
+
+    detectMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
 
     init() {
@@ -38,10 +47,28 @@ class HungerGamesClient {
 
         this.socket.on('countdownUpdate', (count) => {
             document.getElementById('gameTimer').textContent = `Countdown: ${count}`;
+            this.countdownActive = count > 0;
         });
 
         this.socket.on('countdownEnd', () => {
             document.getElementById('gameTimer').textContent = 'FIGHT!';
+            this.countdownActive = false;
+            this.gameStarted = true;
+        });
+
+        this.socket.on('playerEliminated', (data) => {
+            if (data.playerId === this.socket.id && data.reason === 'earlyMovement') {
+                alert('You moved too early! You have been eliminated and can only spectate.');
+                this.spectatorMode = true;
+                this.showSpectatorScreen();
+            }
+        });
+
+        this.socket.on('itemPickup', (data) => {
+            if (data.playerId === this.socket.id) {
+                this.inventory.push(data.item);
+                this.updateInventoryDisplay();
+            }
         });
 
         this.socket.on('gameState', (state) => {
@@ -113,8 +140,28 @@ class HungerGamesClient {
         document.addEventListener('keydown', (e) => {
             this.keys[e.key.toLowerCase()] = true;
             
+            // Prevent movement during countdown
+            if (this.countdownActive && (e.key.toLowerCase() === 'w' || e.key.toLowerCase() === 'a' || 
+                e.key.toLowerCase() === 's' || e.key.toLowerCase() === 'd')) {
+                this.socket.emit('earlyMovement');
+                e.preventDefault();
+                return;
+            }
+            
+            // Inventory navigation
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                this.navigateInventory(e.key === 'ArrowUp' ? -1 : 1);
+                e.preventDefault();
+            }
+            
+            // Use item
+            if (e.key === 'Enter' && this.inventory.length > 0) {
+                this.useSelectedItem();
+                e.preventDefault();
+            }
+            
             // Attack with spacebar
-            if (e.key === ' ' && this.currentPlayer && this.currentPlayer.alive) {
+            if (e.key === ' ' && this.currentPlayer && this.currentPlayer.alive && this.gameStarted) {
                 this.handleAttack();
                 e.preventDefault();
             }
@@ -122,6 +169,62 @@ class HungerGamesClient {
 
         document.addEventListener('keyup', (e) => {
             this.keys[e.key.toLowerCase()] = false;
+        });
+
+        // Mobile touch controls
+        if (this.isMobile) {
+            this.setupMobileControls();
+        }
+    }
+
+    setupMobileControls() {
+        // Create mobile control overlay
+        const mobileControls = document.createElement('div');
+        mobileControls.className = 'mobile-controls';
+        mobileControls.innerHTML = `
+            <div class="movement-pad">
+                <button class="move-btn" data-direction="w">↑</button>
+                <div class="middle-row">
+                    <button class="move-btn" data-direction="a">←</button>
+                    <button class="move-btn" data-direction="d">→</button>
+                </div>
+                <button class="move-btn" data-direction="s">↓</button>
+            </div>
+            <div class="action-buttons">
+                <button class="action-btn" id="attackBtn">Attack</button>
+                <button class="action-btn" id="useItemBtn">Use Item</button>
+            </div>
+        `;
+        document.body.appendChild(mobileControls);
+
+        // Touch movement
+        document.querySelectorAll('.move-btn').forEach(btn => {
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const direction = btn.dataset.direction;
+                this.keys[direction] = true;
+            });
+            
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                const direction = btn.dataset.direction;
+                this.keys[direction] = false;
+            });
+        });
+
+        // Touch actions
+        document.getElementById('attackBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (this.currentPlayer && this.currentPlayer.alive && this.gameStarted) {
+                this.handleAttack();
+            }
+        });
+
+        document.getElementById('useItemBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (this.inventory.length > 0) {
+                this.useSelectedItem();
+            }
         });
     }
 
@@ -267,6 +370,50 @@ class HungerGamesClient {
         if (this.gameState) {
             document.getElementById('aliveCount').textContent = this.gameState.aliveCount;
         }
+
+        // Update inventory display
+        this.updateInventoryDisplay();
+    }
+
+    navigateInventory(direction) {
+        if (this.inventory.length === 0) return;
+        
+        this.selectedItemIndex += direction;
+        if (this.selectedItemIndex < 0) this.selectedItemIndex = this.inventory.length - 1;
+        if (this.selectedItemIndex >= this.inventory.length) this.selectedItemIndex = 0;
+        
+        this.updateInventoryDisplay();
+    }
+
+    useSelectedItem() {
+        if (this.inventory.length === 0) return;
+        
+        const item = this.inventory[this.selectedItemIndex];
+        this.socket.emit('useItem', { itemId: item.id });
+    }
+
+    updateInventoryDisplay() {
+        const inventoryDiv = document.getElementById('inventoryDisplay');
+        if (!inventoryDiv) {
+            // Create inventory display if it doesn't exist
+            const inventoryContainer = document.createElement('div');
+            inventoryContainer.id = 'inventoryDisplay';
+            inventoryContainer.className = 'inventory-display';
+            document.querySelector('.game-ui').appendChild(inventoryContainer);
+        }
+        
+        const display = document.getElementById('inventoryDisplay');
+        if (this.inventory.length === 0) {
+            display.innerHTML = '<div class="inventory-empty">No items</div>';
+            return;
+        }
+        
+        display.innerHTML = this.inventory.map((item, index) => `
+            <div class="inventory-item ${index === this.selectedItemIndex ? 'selected' : ''}">
+                <span class="item-icon" style="color: ${item.color}">${item.icon}</span>
+                <span class="item-name">${item.name}</span>
+            </div>
+        `).join('');
     }
 
     updateSpectatorUI() {
@@ -276,21 +423,32 @@ class HungerGamesClient {
     }
 
     handleMovement() {
-        if (!this.currentPlayer || !this.currentPlayer.alive || !this.gameState) return;
+        if (!this.currentPlayer || !this.currentPlayer.alive || !this.gameState || this.countdownActive) return;
 
         let dx = 0;
         let dy = 0;
-        const speed = 3;
+        const speed = 4;
 
-        if (this.keys['w'] || this.keys['arrowup']) dy -= speed;
-        if (this.keys['s'] || this.keys['arrowdown']) dy += speed;
-        if (this.keys['a'] || this.keys['arrowleft']) dx -= speed;
-        if (this.keys['d'] || this.keys['arrowright']) dx += speed;
+        if (this.keys['w']) dy -= speed;
+        if (this.keys['s']) dy += speed;
+        if (this.keys['a']) dx -= speed;
+        if (this.keys['d']) dx += speed;
+
+        // Normalize diagonal movement
+        if (dx !== 0 && dy !== 0) {
+            dx *= 0.707; // Math.sqrt(2)/2
+            dy *= 0.707;
+        }
 
         if (dx !== 0 || dy !== 0) {
-            const newX = this.currentPlayer.x + dx;
-            const newY = this.currentPlayer.y + dy;
+            const newX = Math.max(0, Math.min(800, this.currentPlayer.x + dx));
+            const newY = Math.max(0, Math.min(600, this.currentPlayer.y + dy));
             
+            // Update position locally for smooth movement
+            this.currentPlayer.x = newX;
+            this.currentPlayer.y = newY;
+            
+            // Send to server
             this.socket.emit('playerMove', { x: newX, y: newY });
         }
     }
@@ -334,11 +492,11 @@ class HungerGamesClient {
         // Draw cornucopia
         this.drawCornucopia(ctx);
 
-        // Draw weapons
-        if (this.gameState.weapons) {
-            this.gameState.weapons.forEach(weapon => {
-                if (!weapon.taken) {
-                    this.drawWeapon(ctx, weapon);
+        // Draw items (weapons, resources, random items)
+        if (this.gameState.items) {
+            this.gameState.items.forEach(item => {
+                if (!item.taken) {
+                    this.drawItem(ctx, item);
                 }
             });
         }
@@ -398,14 +556,32 @@ class HungerGamesClient {
         ctx.fillText('🏺', x, y + 7);
     }
 
-    drawWeapon(ctx, weapon) {
-        ctx.fillStyle = '#c0c0c0';
-        ctx.fillRect(weapon.x - 5, weapon.y - 5, 10, 10);
+    drawItem(ctx, item) {
+        // Draw colored dot based on item type
+        let color = '#00ff00'; // Default green for weapons
+        if (item.type === 'resource') color = '#ffff00'; // Yellow for resources
+        if (item.type === 'random') color = '#00ffff';   // Cyan for random items
         
-        ctx.fillStyle = '#000';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('⚔️', weapon.x, weapon.y + 3);
+        // Draw outer glow
+        const glowGradient = ctx.createRadialGradient(item.x, item.y, 0, item.x, item.y, 12);
+        glowGradient.addColorStop(0, color + '80');
+        glowGradient.addColorStop(1, color + '00');
+        ctx.fillStyle = glowGradient;
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, 12, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        // Draw main dot
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, 6, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        // Draw inner highlight
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(item.x - 2, item.y - 2, 2, 0, 2 * Math.PI);
+        ctx.fill();
     }
 
     drawAnimal(ctx, animal) {
@@ -427,50 +603,64 @@ class HungerGamesClient {
     }
 
     drawPlayer(ctx, player) {
+        const radius = 25; // Bigger player size
+        
         // Draw player image or placeholder
         if (player.image) {
             const img = new Image();
             img.onload = () => {
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(player.x, player.y, 15, 0, 2 * Math.PI);
+                ctx.arc(player.x, player.y, radius, 0, 2 * Math.PI);
                 ctx.clip();
-                ctx.drawImage(img, player.x - 15, player.y - 15, 30, 30);
+                ctx.drawImage(img, player.x - radius, player.y - radius, radius * 2, radius * 2);
                 ctx.restore();
+                
+                // Draw border for current player
+                if (player.id === this.socket.id) {
+                    ctx.strokeStyle = '#e74c3c';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(player.x, player.y, radius, 0, 2 * Math.PI);
+                    ctx.stroke();
+                }
             };
             img.src = player.image;
         } else {
             // Fallback circle
             ctx.fillStyle = player.id === this.socket.id ? '#e74c3c' : '#3498db';
             ctx.beginPath();
-            ctx.arc(player.x, player.y, 15, 0, 2 * Math.PI);
+            ctx.arc(player.x, player.y, radius, 0, 2 * Math.PI);
             ctx.fill();
         }
 
         // Draw player name
         ctx.fillStyle = '#000';
-        ctx.font = '12px Arial';
+        ctx.font = '14px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(player.name, player.x, player.y - 25);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeText(player.name, player.x, player.y - 35);
+        ctx.fillText(player.name, player.x, player.y - 35);
 
         // Draw health bar
-        const barWidth = 30;
-        const barHeight = 4;
+        const barWidth = 40;
+        const barHeight = 6;
         const barX = player.x - barWidth / 2;
-        const barY = player.y + 20;
+        const barY = player.y + 35;
 
-        ctx.fillStyle = '#ff0000';
+        // Health bar background
+        ctx.fillStyle = '#333';
         ctx.fillRect(barX, barY, barWidth, barHeight);
         
-        ctx.fillStyle = '#00ff00';
+        // Health bar fill
+        ctx.fillStyle = player.health > 50 ? '#00ff00' : player.health > 25 ? '#ffff00' : '#ff0000';
         ctx.fillRect(barX, barY, (barWidth * player.health) / 100, barHeight);
-
-        // Draw weapon indicator
-        if (player.weapon) {
-            ctx.fillStyle = '#ffd700';
-            ctx.font = '16px Arial';
-            ctx.fillText('⚔️', player.x + 20, player.y);
-        }
+        
+        // Health bar border
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
     }
 
     startGameLoop() {

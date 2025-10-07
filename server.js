@@ -35,8 +35,9 @@ let gameState = {
     gameStarted: false,
     arena: null,
     countdown: 10,
+    countdownActive: false,
     animals: [],
-    weapons: [],
+    items: [],
     spectators: new Set()
 };
 
@@ -63,11 +64,32 @@ const ABILITIES = [
     "Hand-to-Hand Combat", "Camouflage", "Knives", "Spears"
 ];
 
-// Weapons for cornucopia
-const WEAPONS = [
-    "Bow and Arrows", "Sword", "Spear", "Knife", "Axe", 
-    "Mace", "Trident", "Crossbow", "Dagger"
-];
+// Items for cornucopia area
+const ITEMS = {
+    weapons: [
+        { name: "Bow and Arrows", damage: 25, icon: "🏹" },
+        { name: "Sword", damage: 30, icon: "⚔️" },
+        { name: "Spear", damage: 20, icon: "🗡️" },
+        { name: "Knife", damage: 15, icon: "🔪" },
+        { name: "Axe", damage: 35, icon: "🪓" },
+        { name: "Mace", damage: 28, icon: "🔨" },
+        { name: "Trident", damage: 32, icon: "🔱" },
+        { name: "Crossbow", damage: 27, icon: "🏹" }
+    ],
+    resources: [
+        { name: "Food Pack", effect: "food", amount: 40, icon: "🍖" },
+        { name: "Medicine", effect: "health", amount: 30, icon: "💊" },
+        { name: "Water Bottle", effect: "immune", amount: 25, icon: "💧" },
+        { name: "Energy Bar", effect: "food", amount: 20, icon: "🍫" },
+        { name: "First Aid Kit", effect: "health", amount: 50, icon: "🏥" }
+    ],
+    random: [
+        { name: "Shield", effect: "defense", amount: 15, icon: "🛡️" },
+        { name: "Speed Boost", effect: "speed", amount: 10, icon: "⚡" },
+        { name: "Invisibility Cloak", effect: "stealth", amount: 30, icon: "👻" },
+        { name: "Fire Starter", effect: "damage", amount: 5, icon: "🔥" }
+    ]
+};
 
 // Animals
 const ANIMALS = [
@@ -102,10 +124,10 @@ class GameEngine {
             }
         }
 
-        // Generate starting positions around the cornucopia
+        // Generate starting positions in a perfect circle around cornucopia
         const centerX = arena.cornucopia.x;
         const centerY = arena.cornucopia.y;
-        const radius = 150;
+        const radius = 180; // Increased radius for better spacing
         
         for (let i = 0; i < 24; i++) {
             const angle = (i / 24) * 2 * Math.PI;
@@ -118,14 +140,69 @@ class GameEngine {
         return arena;
     }
 
-    static generateWeapons() {
-        const shuffled = [...WEAPONS].sort(() => 0.5 - Math.random());
-        return shuffled.slice(0, 3).map(weapon => ({
-            type: weapon,
-            x: 380 + Math.random() * 40,
-            y: 280 + Math.random() * 40,
-            taken: false
-        }));
+    static generateItems() {
+        const items = [];
+        const centerX = 400;
+        const centerY = 300;
+        
+        // Generate items in concentric circles around cornucopia
+        // Weapons (green) - closest to center
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * 2 * Math.PI;
+            const radius = 50 + Math.random() * 30;
+            const weapon = ITEMS.weapons[Math.floor(Math.random() * ITEMS.weapons.length)];
+            items.push({
+                id: uuidv4(),
+                type: 'weapon',
+                name: weapon.name,
+                damage: weapon.damage,
+                icon: weapon.icon,
+                color: '#00ff00',
+                x: centerX + Math.cos(angle) * radius,
+                y: centerY + Math.sin(angle) * radius,
+                taken: false
+            });
+        }
+        
+        // Resources (yellow) - middle ring
+        for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * 2 * Math.PI;
+            const radius = 90 + Math.random() * 40;
+            const resource = ITEMS.resources[Math.floor(Math.random() * ITEMS.resources.length)];
+            items.push({
+                id: uuidv4(),
+                type: 'resource',
+                name: resource.name,
+                effect: resource.effect,
+                amount: resource.amount,
+                icon: resource.icon,
+                color: '#ffff00',
+                x: centerX + Math.cos(angle) * radius,
+                y: centerY + Math.sin(angle) * radius,
+                taken: false
+            });
+        }
+        
+        // Random items (cyan) - outer ring
+        for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * 2 * Math.PI;
+            const radius = 140 + Math.random() * 30;
+            const randomItem = ITEMS.random[Math.floor(Math.random() * ITEMS.random.length)];
+            items.push({
+                id: uuidv4(),
+                type: 'random',
+                name: randomItem.name,
+                effect: randomItem.effect,
+                amount: randomItem.amount,
+                icon: randomItem.icon,
+                color: '#00ffff',
+                x: centerX + Math.cos(angle) * radius,
+                y: centerY + Math.sin(angle) * radius,
+                taken: false
+            });
+        }
+        
+        return items;
     }
 
     static generateAnimals(count = 5) {
@@ -217,7 +294,7 @@ io.on('connection', (socket) => {
         
         // Generate arena and game elements
         gameState.arena = GameEngine.generateArena();
-        gameState.weapons = GameEngine.generateWeapons();
+        gameState.items = GameEngine.generateItems();
         gameState.animals = GameEngine.generateAnimals();
         
         // Assign attributes to all players
@@ -228,35 +305,104 @@ io.on('connection', (socket) => {
         // Start countdown
         io.emit('gameStarting', {
             arena: gameState.arena,
-            weapons: gameState.weapons,
+            items: gameState.items,
             animals: gameState.animals,
             players: Array.from(gameState.players.values())
         });
         
+        gameState.countdownActive = true;
         startCountdown();
+    });
+
+    // Early movement detection
+    socket.on('earlyMovement', () => {
+        const player = gameState.players.get(socket.id);
+        if (player && gameState.countdownActive) {
+            player.alive = false;
+            player.eliminatedReason = 'Early movement - blown up by mines';
+            gameState.spectators.add(socket.id);
+            io.emit('playerEliminated', { 
+                playerId: socket.id, 
+                reason: 'earlyMovement',
+                message: `${player.name} moved too early and was eliminated!`
+            });
+            broadcastGameState();
+        }
     });
 
     // Player movement
     socket.on('playerMove', (moveData) => {
         const player = gameState.players.get(socket.id);
-        if (!player || !player.alive || !gameState.gameActive) return;
+        if (!player || !player.alive || !gameState.gameActive || gameState.countdownActive) return;
 
         // Update player position (with bounds checking)
         player.x = Math.max(0, Math.min(800, moveData.x));
         player.y = Math.max(0, Math.min(600, moveData.y));
         
-        // Check for weapon pickup
-        gameState.weapons.forEach(weapon => {
-            if (!weapon.taken && 
-                Math.abs(player.x - weapon.x) < 30 && 
-                Math.abs(player.y - weapon.y) < 30) {
-                weapon.taken = true;
-                player.weapon = weapon.type;
-                io.emit('weaponTaken', { playerId: socket.id, weapon: weapon.type });
+        // Check for item pickup
+        gameState.items.forEach(item => {
+            if (!item.taken && 
+                Math.abs(player.x - item.x) < 35 && 
+                Math.abs(player.y - item.y) < 35) {
+                item.taken = true;
+                
+                if (!player.inventory) player.inventory = [];
+                player.inventory.push(item);
+                
+                io.to(socket.id).emit('itemPickup', { 
+                    playerId: socket.id, 
+                    item: {
+                        id: item.id,
+                        name: item.name,
+                        type: item.type,
+                        icon: item.icon,
+                        color: item.color
+                    }
+                });
             }
         });
         
         // Broadcast player positions (only visible players)
+        broadcastGameState();
+    });
+
+    // Item usage
+    socket.on('useItem', (data) => {
+        const player = gameState.players.get(socket.id);
+        if (!player || !player.alive || !player.inventory) return;
+        
+        const itemIndex = player.inventory.findIndex(item => item.id === data.itemId);
+        if (itemIndex === -1) return;
+        
+        const item = player.inventory[itemIndex];
+        
+        // Apply item effects
+        switch (item.effect) {
+            case 'health':
+                player.health = Math.min(100, player.health + item.amount);
+                break;
+            case 'food':
+                player.food = Math.min(100, player.food + item.amount);
+                break;
+            case 'immune':
+                player.immune = Math.min(100, player.immune + item.amount);
+                break;
+            case 'defense':
+                player.defense = (player.defense || 0) + item.amount;
+                break;
+            case 'speed':
+                player.speedBoost = (player.speedBoost || 0) + item.amount;
+                break;
+        }
+        
+        // Remove item from inventory
+        player.inventory.splice(itemIndex, 1);
+        
+        io.to(socket.id).emit('itemUsed', { 
+            item: item.name,
+            effect: `${item.effect} +${item.amount}`
+        });
+        
         broadcastGameState();
     });
 
@@ -319,6 +465,7 @@ function startCountdown() {
         
         if (gameState.countdown < 0) {
             clearInterval(countdownInterval);
+            gameState.countdownActive = false;
             io.emit('countdownEnd');
             startGameLoop();
         }
@@ -396,7 +543,7 @@ function broadcastGameState() {
         io.to(playerId).emit('gameState', {
             players: visiblePlayers,
             animals: visibleAnimals,
-            weapons: gameState.weapons,
+            items: gameState.items,
             aliveCount: alivePlayers.length,
             currentPlayer: player
         });
@@ -407,7 +554,7 @@ function broadcastGameState() {
         io.to(spectatorId).emit('spectatorState', {
             players: alivePlayers,
             animals: gameState.animals,
-            weapons: gameState.weapons,
+            items: gameState.items,
             aliveCount: alivePlayers.length
         });
     }
@@ -433,8 +580,9 @@ function checkGameEnd() {
                 gameStarted: false,
                 arena: null,
                 countdown: 10,
+                countdownActive: false,
                 animals: [],
-                weapons: [],
+                items: [],
                 spectators: new Set()
             };
         }, 5000);
