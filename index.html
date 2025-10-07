@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hunger Games Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Lobby Screen -->
+        <div id="lobby" class="screen active">
+            <h1>Hunger Games Simulator</h1>
+            <div class="player-registration">
+                <h2>Join the Game</h2>
+                <form id="playerForm">
+                    <div class="input-group">
+                        <label for="playerName">Your Name:</label>
+                        <input type="text" id="playerName" required maxlength="20">
+                    </div>
+                    <div class="input-group">
+                        <label for="playerImage">Your Avatar:</label>
+                        <input type="file" id="playerImage" accept="image/*" required>
+                        <div id="imagePreview"></div>
+                    </div>
+                    <button type="submit">Join Game</button>
+                </form>
+            </div>
+            <div class="players-waiting">
+                <h3>Players Waiting:</h3>
+                <div id="playersList"></div>
+                <div class="game-status">
+                    <p>Waiting for more players... <span id="playerCount">0</span>/12 minimum</p>
+                    <button id="startGame" style="display: none;">Start Game</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="gameScreen" class="screen">
+            <div class="game-ui">
+                <div class="player-stats">
+                    <div class="stat">
+                        <span class="stat-label">Health:</span>
+                        <div class="stat-bar">
+                            <div id="healthBar" class="stat-fill"></div>
+                        </div>
+                        <span id="healthValue">100</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Food:</span>
+                        <div class="stat-bar">
+                            <div id="foodBar" class="stat-fill"></div>
+                        </div>
+                        <span id="foodValue">100</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Immune:</span>
+                        <div class="stat-bar">
+                            <div id="immuneBar" class="stat-fill"></div>
+                        </div>
+                        <span id="immuneValue">100</span>
+                    </div>
+                </div>
+                <div class="player-info">
+                    <div id="playerDistrict">District: ?</div>
+                    <div id="playerAbility">Ability: ?</div>
+                    <div id="gameTimer">Countdown: 10</div>
+                </div>
+                <div class="alive-count">
+                    <span>Alive: <span id="aliveCount">0</span></span>
+                </div>
+            </div>
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <div class="controls-info">
+                <p>Use WASD to move • Get close to see other players and items</p>
+            </div>
+        </div>
+
+        <!-- Spectator Screen -->
+        <div id="spectatorScreen" class="screen">
+            <div class="spectator-ui">
+                <h2>You have been eliminated!</h2>
+                <p>Watch the remaining players fight for victory</p>
+                <div class="alive-count">
+                    <span>Alive: <span id="spectatorAliveCount">0</span></span>
+                </div>
+            </div>
+            <canvas id="spectatorCanvas" width="800" height="600"></canvas>
+            <button id="newGameBtn">Join Next Game</button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="screen">
+            <h1 id="winnerAnnouncement">Game Over</h1>
+            <div id="gameResults"></div>
+            <button id="playAgainBtn">Play Again</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
