@@ -74,9 +74,12 @@
                     <div class="inventory-empty">No items</div>
                 </div>
             </div>
-            <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <div id="gameContainer">
+                <canvas id="gameCanvas"></canvas>
+                <div id="crosshair">+</div>
+            </div>
             <div class="controls-info">
-                <p>Use WASD to move • Arrow keys to navigate inventory • Enter/Tap to use items • Spacebar to attack</p>
+                <p>WASD to move • C to switch camera • Arrow keys for inventory • Enter to use items • Spacebar to attack</p>
             </div>
         </div>
 
@@ -89,7 +92,9 @@
                     <span>Alive: <span id="spectatorAliveCount">0</span></span>
                 </div>
             </div>
-            <canvas id="spectatorCanvas" width="800" height="600"></canvas>
+            <div id="spectatorContainer">
+                <canvas id="spectatorCanvas"></canvas>
+            </div>
             <button id="newGameBtn">Join Next Game</button>
         </div>
 
@@ -101,6 +106,9 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="game.js"></script>
 </body>

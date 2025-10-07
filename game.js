@@ -1,18 +1,31 @@
-// Game client-side logic
+// 3D Hunger Games Simulator
 class HungerGamesClient {
     constructor() {
         this.socket = io();
         this.currentPlayer = null;
         this.gameState = null;
         this.keys = {};
-        this.canvas = null;
-        this.ctx = null;
         this.spectatorMode = false;
         this.countdownActive = false;
         this.gameStarted = false;
         this.inventory = [];
         this.selectedItemIndex = 0;
         this.isMobile = this.detectMobile();
+        
+        // 3D Engine Components
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.controls = null;
+        this.playerMeshes = new Map();
+        this.itemMeshes = new Map();
+        this.animalMeshes = new Map();
+        this.terrain = null;
+        this.cornucopia = null;
+        
+        // 3D Settings
+        this.cameraMode = 'third-person'; // 'first-person' or 'third-person'
+        this.mouseLocked = false;
         
         this.init();
     }
@@ -160,6 +173,12 @@ class HungerGamesClient {
                 e.preventDefault();
             }
             
+            // Switch camera mode with C key
+            if (e.key.toLowerCase() === 'c' && this.gameStarted) {
+                this.switchCameraMode();
+                e.preventDefault();
+            }
+            
             // Attack with spacebar
             if (e.key === ' ' && this.currentPlayer && this.currentPlayer.alive && this.gameStarted) {
                 this.handleAttack();
@@ -193,6 +212,7 @@ class HungerGamesClient {
             <div class="action-buttons">
                 <button class="action-btn" id="attackBtn">Attack</button>
                 <button class="action-btn" id="useItemBtn">Use Item</button>
+                <button class="action-btn" id="cameraSwitchBtn">Camera</button>
             </div>
         `;
         document.body.appendChild(mobileControls);
@@ -226,13 +246,99 @@ class HungerGamesClient {
                 this.useSelectedItem();
             }
         });
+
+        document.getElementById('cameraSwitchBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (this.gameStarted) {
+                this.switchCameraMode();
+            }
+        });
     }
 
     setupCanvas() {
         this.canvas = document.getElementById('gameCanvas');
-        this.ctx = this.canvas.getContext('2d');
         this.spectatorCanvas = document.getElementById('spectatorCanvas');
-        this.spectatorCtx = this.spectatorCanvas.getContext('2d');
+        this.setup3D();
+    }
+
+    setup3D() {
+        // Create scene
+        this.scene = new THREE.Scene();
+        this.scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
+        
+        // Setup camera
+        this.camera = new THREE.PerspectiveCamera(
+            75, // FOV
+            window.innerWidth / window.innerHeight, // Aspect ratio
+            0.1, // Near clipping plane
+            1000 // Far clipping plane
+        );
+        
+        // Setup renderer
+        this.renderer = new THREE.WebGLRenderer({ 
+            canvas: this.canvas,
+            antialias: true 
+        });
+        this.renderer.setSize(this.canvas.parentElement.clientWidth, this.canvas.parentElement.clientHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.setClearColor(0x87CEEB); // Sky blue
+        
+        // Add lights
+        this.setupLighting();
+        
+        // Setup controls
+        this.setupControls();
+        
+        // Handle window resize
+        window.addEventListener('resize', () => this.onWindowResize());
+        
+        // Mouse lock for first-person mode
+        if (!this.isMobile) {
+            this.canvas.addEventListener('click', () => {
+                if (this.cameraMode === 'first-person') {
+                    this.canvas.requestPointerLock();
+                }
+            });
+            
+            document.addEventListener('pointerlockchange', () => {
+                this.mouseLocked = document.pointerLockElement === this.canvas;
+            });
+        }
+    }
+
+    setupLighting() {
+        // Ambient light
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+        this.scene.add(ambientLight);
+        
+        // Directional light (sun)
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(50, 50, 50);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        directionalLight.shadow.camera.left = -50;
+        directionalLight.shadow.camera.right = 50;
+        directionalLight.shadow.camera.top = 50;
+        directionalLight.shadow.camera.bottom = -50;
+        this.scene.add(directionalLight);
+    }
+
+    setupControls() {
+        if (!this.isMobile) {
+            // Desktop - we'll handle movement manually for better control
+            this.controls = null; // We'll implement custom controls
+        }
+    }
+
+    onWindowResize() {
+        const container = this.canvas.parentElement;
+        this.camera.aspect = container.clientWidth / container.clientHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(container.clientWidth, container.clientHeight);
     }
 
     previewImage(file) {
@@ -294,6 +400,129 @@ class HungerGamesClient {
     showGameScreen() {
         document.getElementById('lobby').classList.remove('active');
         document.getElementById('gameScreen').classList.add('active');
+        this.create3DArena();
+    }
+
+    create3DArena() {
+        // Create terrain
+        this.createTerrain();
+        
+        // Create cornucopia
+        this.createCornucopia();
+        
+        // Create environment elements
+        this.createEnvironment();
+    }
+
+    createTerrain() {
+        // Create large ground plane
+        const groundGeometry = new THREE.PlaneGeometry(200, 200, 50, 50);
+        
+        // Create height variation
+        const vertices = groundGeometry.attributes.position.array;
+        for (let i = 0; i < vertices.length; i += 3) {
+            // Add some random height variation
+            vertices[i + 2] = Math.random() * 2 - 1; // Z coordinate (height)
+        }
+        groundGeometry.attributes.position.needsUpdate = true;
+        groundGeometry.computeVertexNormals();
+        
+        // Create ground material with texture-like appearance
+        const groundMaterial = new THREE.MeshLambertMaterial({ 
+            color: 0x8FBC8F, // Forest green
+            wireframe: false 
+        });
+        
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+        ground.receiveShadow = true;
+        this.scene.add(ground);
+        
+        this.terrain = ground;
+    }
+
+    createCornucopia() {
+        // Create golden cornucopia at center
+        const cornucopiaGroup = new THREE.Group();
+        
+        // Main horn shape
+        const hornGeometry = new THREE.ConeGeometry(8, 12, 8);
+        const hornMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0xFFD700, // Gold
+            shininess: 100 
+        });
+        const horn = new THREE.Mesh(hornGeometry, hornMaterial);
+        horn.position.set(0, 6, 0);
+        horn.rotation.z = Math.PI / 6; // Tilt it
+        horn.castShadow = true;
+        cornucopiaGroup.add(horn);
+        
+        // Base platform
+        const baseGeometry = new THREE.CylinderGeometry(12, 12, 2, 16);
+        const baseMaterial = new THREE.MeshPhongMaterial({ color: 0xCD853F }); // Peru
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.position.set(0, 1, 0);
+        base.receiveShadow = true;
+        cornucopiaGroup.add(base);
+        
+        this.scene.add(cornucopiaGroup);
+        this.cornucopia = cornucopiaGroup;
+    }
+
+    createEnvironment() {
+        // Add trees around the arena
+        for (let i = 0; i < 50; i++) {
+            this.createTree(
+                (Math.random() - 0.5) * 180, // X position
+                (Math.random() - 0.5) * 180  // Z position
+            );
+        }
+        
+        // Add rocks
+        for (let i = 0; i < 20; i++) {
+            this.createRock(
+                (Math.random() - 0.5) * 150,
+                (Math.random() - 0.5) * 150
+            );
+        }
+    }
+
+    createTree(x, z) {
+        const treeGroup = new THREE.Group();
+        
+        // Trunk
+        const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.8, 6);
+        const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // Brown
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.set(0, 3, 0);
+        trunk.castShadow = true;
+        treeGroup.add(trunk);
+        
+        // Leaves
+        const leavesGeometry = new THREE.SphereGeometry(4);
+        const leavesMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 }); // Forest green
+        const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+        leaves.position.set(0, 8, 0);
+        leaves.castShadow = true;
+        treeGroup.add(leaves);
+        
+        treeGroup.position.set(x, 0, z);
+        this.scene.add(treeGroup);
+    }
+
+    createRock(x, z) {
+        const rockGeometry = new THREE.DodecahedronGeometry(Math.random() * 2 + 1);
+        const rockMaterial = new THREE.MeshLambertMaterial({ color: 0x696969 }); // Dim gray
+        const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+        rock.position.set(x, 1, z);
+        rock.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        );
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        this.scene.add(rock);
     }
 
     showSpectatorScreen() {
@@ -436,7 +665,7 @@ class HungerGamesClient {
 
         // Normalize diagonal movement
         if (dx !== 0 && dy !== 0) {
-            dx *= 0.707; // Math.sqrt(2)/2
+            dx *= 0.707;
             dy *= 0.707;
         }
 
@@ -444,13 +673,58 @@ class HungerGamesClient {
             const newX = Math.max(0, Math.min(800, this.currentPlayer.x + dx));
             const newY = Math.max(0, Math.min(600, this.currentPlayer.y + dy));
             
-            // Update position locally for smooth movement
+            // Update position locally
             this.currentPlayer.x = newX;
             this.currentPlayer.y = newY;
+            
+            // Update 3D camera to follow player
+            this.update3DCamera();
             
             // Send to server
             this.socket.emit('playerMove', { x: newX, y: newY });
         }
+    }
+
+    update3DCamera() {
+        if (!this.currentPlayer || !this.camera) return;
+        
+        const playerMesh = this.playerMeshes.get(this.currentPlayer.id);
+        if (!playerMesh) return;
+        
+        const playerPos = playerMesh.position;
+        
+        if (this.cameraMode === 'third-person') {
+            // Third-person camera - follow behind and above
+            const offset = new THREE.Vector3(0, 8, 12);
+            this.camera.position.set(
+                playerPos.x + offset.x,
+                playerPos.y + offset.y,
+                playerPos.z + offset.z
+            );
+            this.camera.lookAt(playerPos.x, playerPos.y + 2, playerPos.z);
+            
+        } else if (this.cameraMode === 'first-person') {
+            // First-person camera - at player head level
+            this.camera.position.set(
+                playerPos.x,
+                playerPos.y + 4.5, // Head height
+                playerPos.z
+            );
+            
+            // Look direction based on mouse movement (if mouse is locked)
+            if (this.mouseLocked) {
+                // Mouse look would be implemented here
+            }
+        }
+    }
+
+    switchCameraMode() {
+        this.cameraMode = this.cameraMode === 'third-person' ? 'first-person' : 'third-person';
+        this.update3DCamera();
+        
+        // Show/hide crosshair
+        const crosshair = document.getElementById('crosshair');
+        crosshair.style.display = this.cameraMode === 'first-person' ? 'block' : 'none';
     }
 
     handleAttack() {
@@ -476,46 +750,52 @@ class HungerGamesClient {
     }
 
     render() {
-        const canvas = this.spectatorMode ? this.spectatorCanvas : this.canvas;
-        const ctx = this.spectatorMode ? this.spectatorCtx : this.ctx;
-        
-        if (!ctx || !this.gameState) return;
+        if (!this.renderer || !this.scene || !this.camera) return;
 
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Update 3D elements
+        if (this.gameState) {
+            // Update players
+            if (this.gameState.players) {
+                this.gameState.players.forEach(player => {
+                    if (player.alive) {
+                        this.update3DPlayer(player);
+                        if (!this.playerMeshes.has(player.id)) {
+                            this.create3DPlayer(player);
+                        }
+                    } else {
+                        // Remove dead players
+                        const playerMesh = this.playerMeshes.get(player.id);
+                        if (playerMesh) {
+                            this.scene.remove(playerMesh);
+                            this.playerMeshes.delete(player.id);
+                        }
+                    }
+                });
+            }
 
-        // Draw terrain
-        if (this.gameState.arena || this.gameState.players) {
-            this.drawTerrain(ctx);
+            // Update items
+            if (this.gameState.items) {
+                this.gameState.items.forEach(item => {
+                    if (!item.taken && !this.itemMeshes.has(item.id)) {
+                        this.create3DItem(item);
+                    } else if (item.taken && this.itemMeshes.has(item.id)) {
+                        // Remove taken items
+                        const itemMesh = this.itemMeshes.get(item.id);
+                        this.scene.remove(itemMesh);
+                        this.itemMeshes.delete(item.id);
+                    }
+                });
+            }
+
+            // Animate items
+            this.animate3DItems();
+            
+            // Update camera to follow player
+            this.update3DCamera();
         }
 
-        // Draw cornucopia
-        this.drawCornucopia(ctx);
-
-        // Draw items (weapons, resources, random items)
-        if (this.gameState.items) {
-            this.gameState.items.forEach(item => {
-                if (!item.taken) {
-                    this.drawItem(ctx, item);
-                }
-            });
-        }
-
-        // Draw animals
-        if (this.gameState.animals) {
-            this.gameState.animals.forEach(animal => {
-                this.drawAnimal(ctx, animal);
-            });
-        }
-
-        // Draw players
-        if (this.gameState.players) {
-            this.gameState.players.forEach(player => {
-                if (player.alive) {
-                    this.drawPlayer(ctx, player);
-                }
-            });
-        }
+        // Render the 3D scene
+        this.renderer.render(this.scene, this.camera);
     }
 
     drawTerrain(ctx) {
@@ -556,32 +836,106 @@ class HungerGamesClient {
         ctx.fillText('🏺', x, y + 7);
     }
 
-    drawItem(ctx, item) {
-        // Draw colored dot based on item type
-        let color = '#00ff00'; // Default green for weapons
-        if (item.type === 'resource') color = '#ffff00'; // Yellow for resources
-        if (item.type === 'random') color = '#00ffff';   // Cyan for random items
+    create3DItem(item) {
+        if (this.itemMeshes.has(item.id) || item.taken) {
+            return;
+        }
         
-        // Draw outer glow
-        const glowGradient = ctx.createRadialGradient(item.x, item.y, 0, item.x, item.y, 12);
-        glowGradient.addColorStop(0, color + '80');
-        glowGradient.addColorStop(1, color + '00');
-        ctx.fillStyle = glowGradient;
-        ctx.beginPath();
-        ctx.arc(item.x, item.y, 12, 0, 2 * Math.PI);
-        ctx.fill();
+        const itemGroup = new THREE.Group();
+        let geometry, material;
         
-        // Draw main dot
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(item.x, item.y, 6, 0, 2 * Math.PI);
-        ctx.fill();
+        switch (item.type) {
+            case 'weapon':
+                // Create weapon models
+                if (item.name.includes('Sword')) {
+                    geometry = new THREE.BoxGeometry(0.2, 3, 0.1);
+                    material = new THREE.MeshPhongMaterial({ color: 0xC0C0C0 }); // Silver
+                } else if (item.name.includes('Bow')) {
+                    geometry = new THREE.TorusGeometry(1, 0.1, 8, 16);
+                    material = new THREE.MeshPhongMaterial({ color: 0x8B4513 }); // Brown
+                } else if (item.name.includes('Spear')) {
+                    geometry = new THREE.CylinderGeometry(0.05, 0.05, 4);
+                    material = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+                } else {
+                    // Default weapon
+                    geometry = new THREE.BoxGeometry(0.5, 0.5, 1.5);
+                    material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+                }
+                break;
+                
+            case 'resource':
+                // Create resource models
+                if (item.name.includes('Food') || item.name.includes('Energy')) {
+                    geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+                    material = new THREE.MeshPhongMaterial({ color: 0xFFFF00 });
+                } else if (item.name.includes('Medicine') || item.name.includes('Aid')) {
+                    geometry = new THREE.CylinderGeometry(0.3, 0.3, 0.8);
+                    material = new THREE.MeshPhongMaterial({ color: 0xFF0000 });
+                } else {
+                    geometry = new THREE.SphereGeometry(0.5);
+                    material = new THREE.MeshPhongMaterial({ color: 0xFFFF00 });
+                }
+                break;
+                
+            case 'random':
+                // Create special item models
+                geometry = new THREE.OctahedronGeometry(0.6);
+                material = new THREE.MeshPhongMaterial({ 
+                    color: 0x00FFFF,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                break;
+                
+            default:
+                geometry = new THREE.SphereGeometry(0.5);
+                material = new THREE.MeshPhongMaterial({ color: 0xFFFFFF });
+        }
         
-        // Draw inner highlight
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(item.x - 2, item.y - 2, 2, 0, 2 * Math.PI);
-        ctx.fill();
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(0, 1, 0);
+        mesh.castShadow = true;
+        itemGroup.add(mesh);
+        
+        // Add floating animation
+        mesh.userData.originalY = 1;
+        mesh.userData.floatOffset = Math.random() * Math.PI * 2;
+        
+        // Add glow effect
+        const glowGeometry = new THREE.SphereGeometry(1.2);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: material.color,
+            transparent: true,
+            opacity: 0.3
+        });
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        glow.position.set(0, 1, 0);
+        itemGroup.add(glow);
+        
+        // Position in 3D space
+        itemGroup.position.set(
+            (item.x - 400) / 10,
+            0,
+            (item.y - 300) / 10
+        );
+        
+        this.scene.add(itemGroup);
+        this.itemMeshes.set(item.id, itemGroup);
+    }
+
+    animate3DItems() {
+        const time = Date.now() * 0.001;
+        
+        this.itemMeshes.forEach((itemGroup) => {
+            const mesh = itemGroup.children[0];
+            if (mesh && mesh.userData.originalY !== undefined) {
+                // Floating animation
+                mesh.position.y = mesh.userData.originalY + Math.sin(time * 2 + mesh.userData.floatOffset) * 0.3;
+                
+                // Rotation
+                mesh.rotation.y += 0.02;
+            }
+        });
     }
 
     drawAnimal(ctx, animal) {
@@ -602,65 +956,131 @@ class HungerGamesClient {
         ctx.fillText(emoji, animal.x, animal.y + 5);
     }
 
-    drawPlayer(ctx, player) {
-        const radius = 25; // Bigger player size
-        
-        // Draw player image or placeholder
-        if (player.image) {
-            const img = new Image();
-            img.onload = () => {
-                ctx.save();
-                ctx.beginPath();
-                ctx.arc(player.x, player.y, radius, 0, 2 * Math.PI);
-                ctx.clip();
-                ctx.drawImage(img, player.x - radius, player.y - radius, radius * 2, radius * 2);
-                ctx.restore();
-                
-                // Draw border for current player
-                if (player.id === this.socket.id) {
-                    ctx.strokeStyle = '#e74c3c';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.arc(player.x, player.y, radius, 0, 2 * Math.PI);
-                    ctx.stroke();
-                }
-            };
-            img.src = player.image;
-        } else {
-            // Fallback circle
-            ctx.fillStyle = player.id === this.socket.id ? '#e74c3c' : '#3498db';
-            ctx.beginPath();
-            ctx.arc(player.x, player.y, radius, 0, 2 * Math.PI);
-            ctx.fill();
+    create3DPlayer(player) {
+        if (this.playerMeshes.has(player.id)) {
+            return this.playerMeshes.get(player.id);
         }
-
-        // Draw player name
-        ctx.fillStyle = '#000';
-        ctx.font = '14px Arial';
-        ctx.textAlign = 'center';
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.strokeText(player.name, player.x, player.y - 35);
-        ctx.fillText(player.name, player.x, player.y - 35);
-
-        // Draw health bar
-        const barWidth = 40;
-        const barHeight = 6;
-        const barX = player.x - barWidth / 2;
-        const barY = player.y + 35;
-
-        // Health bar background
-        ctx.fillStyle = '#333';
-        ctx.fillRect(barX, barY, barWidth, barHeight);
         
-        // Health bar fill
-        ctx.fillStyle = player.health > 50 ? '#00ff00' : player.health > 25 ? '#ffff00' : '#ff0000';
-        ctx.fillRect(barX, barY, (barWidth * player.health) / 100, barHeight);
+        const playerGroup = new THREE.Group();
         
-        // Health bar border
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        // Create humanoid body
+        const bodyGeometry = new THREE.CapsuleGeometry(1, 3);
+        const bodyMaterial = new THREE.MeshPhongMaterial({ 
+            color: player.id === this.socket.id ? 0xe74c3c : 0x3498db 
+        });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.position.set(0, 2, 0);
+        body.castShadow = true;
+        playerGroup.add(body);
+        
+        // Head
+        const headGeometry = new THREE.SphereGeometry(0.8);
+        const headMaterial = new THREE.MeshPhongMaterial({ color: 0xFFDBB3 }); // Skin tone
+        const head = new THREE.Mesh(headGeometry, headMaterial);
+        head.position.set(0, 4.5, 0);
+        head.castShadow = true;
+        playerGroup.add(head);
+        
+        // Apply player image as texture if available
+        if (player.image) {
+            const textureLoader = new THREE.TextureLoader();
+            textureLoader.load(player.image, (texture) => {
+                head.material.map = texture;
+                head.material.needsUpdate = true;
+            });
+        }
+        
+        // Name tag
+        this.createNameTag(player.name, playerGroup);
+        
+        // Health bar
+        this.create3DHealthBar(player, playerGroup);
+        
+        // Position player in 3D space
+        playerGroup.position.set(
+            (player.x - 400) / 10, // Convert 2D coordinates to 3D scale
+            0,
+            (player.y - 300) / 10
+        );
+        
+        this.scene.add(playerGroup);
+        this.playerMeshes.set(player.id, playerGroup);
+        
+        return playerGroup;
+    }
+
+    createNameTag(name, parent) {
+        // Create canvas for text
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 256;
+        canvas.height = 64;
+        
+        context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        
+        context.fillStyle = 'white';
+        context.font = '24px Arial';
+        context.textAlign = 'center';
+        context.fillText(name, canvas.width / 2, canvas.height / 2 + 8);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.MeshBasicMaterial({ 
+            map: texture,
+            transparent: true,
+            alphaTest: 0.1
+        });
+        
+        const geometry = new THREE.PlaneGeometry(4, 1);
+        const nameTag = new THREE.Mesh(geometry, material);
+        nameTag.position.set(0, 6, 0);
+        nameTag.lookAt(nameTag.position.clone().add(new THREE.Vector3(0, 0, 1)));
+        
+        parent.add(nameTag);
+    }
+
+    create3DHealthBar(player, parent) {
+        // Background bar
+        const bgGeometry = new THREE.PlaneGeometry(3, 0.3);
+        const bgMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
+        const bgBar = new THREE.Mesh(bgGeometry, bgMaterial);
+        bgBar.position.set(0, 5.5, 0.1);
+        parent.add(bgBar);
+        
+        // Health bar
+        const healthGeometry = new THREE.PlaneGeometry(3 * (player.health / 100), 0.25);
+        const healthColor = player.health > 50 ? 0x00ff00 : player.health > 25 ? 0xffff00 : 0xff0000;
+        const healthMaterial = new THREE.MeshBasicMaterial({ color: healthColor });
+        const healthBar = new THREE.Mesh(healthGeometry, healthMaterial);
+        healthBar.position.set(0, 5.5, 0.2);
+        parent.add(healthBar);
+        
+        // Store reference for updates
+        parent.userData.healthBar = healthBar;
+        parent.userData.healthGeometry = healthGeometry;
+    }
+
+    update3DPlayer(player) {
+        const playerMesh = this.playerMeshes.get(player.id);
+        if (!playerMesh) return;
+        
+        // Update position
+        playerMesh.position.set(
+            (player.x - 400) / 10,
+            0,
+            (player.y - 300) / 10
+        );
+        
+        // Update health bar
+        if (playerMesh.userData.healthBar) {
+            const healthPercent = player.health / 100;
+            const newScale = Math.max(0.01, healthPercent);
+            playerMesh.userData.healthBar.scale.x = newScale;
+            
+            // Update color
+            const healthColor = player.health > 50 ? 0x00ff00 : player.health > 25 ? 0xffff00 : 0xff0000;
+            playerMesh.userData.healthBar.material.color.setHex(healthColor);
+        }
     }
 
     startGameLoop() {
