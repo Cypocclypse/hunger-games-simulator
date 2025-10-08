@@ -472,30 +472,50 @@ class HungerGamesClient {
     getAnimalEmoji(animal) {
         // Simple emoji mapping for visual preview
         const emojiMap = {
+            // Humans
+            'human_male': '👨', 'human_female': '👩', 'athlete': '🏃‍♂️', 'survivor': '🧗‍♂️',
+            'tribute_district1': '👑', 'tribute_district2': '⚒️', 'tribute_district4': '🎣',
+            'tribute_district11': '🌾', 'tribute_district12': '⛏️', 'career_tribute': '⚔️',
+            
             // Mammals
             'lion': '🦁', 'tiger': '🐅', 'leopard': '🐆', 'cheetah': '🐆', 'elephant': '🐘',
-            'bear': '🐻', 'wolf': '🐺', 'fox': '🦊', 'deer': '🦌', 'horse': '🐎',
+            'grizzly': '🐻', 'polarbear': '🐻‍❄️', 'blackbear': '🐻', 'pandabear': '🐼',
+            'wolf': '🐺', 'fox': '🦊', 'arcticfox': '🦊', 'fennecfox': '🦊',
+            'deer': '🦌', 'elk': '🦌', 'moose': '🫎', 'horse': '🐎',
             'zebra': '🦓', 'giraffe': '🦒', 'rhinoceros': '🦏', 'hippopotamus': '🦛',
-            'monkey': '🐒', 'gorilla': '🦍', 'chimpanzee': '🐒', 'orangutan': '🦧',
+            'chimpanzee': '🐒', 'gorilla': '🦍', 'orangutan': '🦧', 'lemur': '🐒',
+            'buffalo': '🦌', 'wildebeest': '🐂', 'gazelle': '🦌', 'antelope': '�',
             
             // Birds
-            'eagle': '🦅', 'owl': '🦉', 'peacock': '🦚', 'parrot': '🦜', 'penguin': '🐧',
-            'duck': '🦆', 'swan': '🦢', 'flamingo': '🦩', 'ostrich': '🐦',
+            'eagle': '🦅', 'owl': '🦉', 'hawk': '🦅', 'falcon': '🦅', 'vulture': '🦅',
+            'peacock': '🦚', 'parrot': '🦜', 'toucan': '🦜', 'penguin': '🐧',
+            'duck': '🦆', 'goose': '🪿', 'swan': '🦢', 'flamingo': '🦩', 
+            'ostrich': '🦓', 'emu': '🦅', 'cassowary': '🦅',
             
             // Reptiles
-            'snake': '🐍', 'lizard': '🦎', 'crocodile': '🐊', 'turtle': '🐢',
+            'python': '🐍', 'cobra': '🐍', 'viper': '🐍', 'rattlesnake': '🐍', 'anaconda': '🐍', 'mamba': '🐍',
+            'iguana': '🦎', 'komodo': '🦎', 'gecko': '🦎', 'chameleon': '🦎', 'monitor': '🦎',
+            'alligator': '🐊', 'crocodile': '🐊', 'caiman': '🐊', 'gharial': '🐊',
+            'seaturtle': '🐢', 'snappingturtle': '🐢', 'tortoise': '🐢', 'boxturtle': '🐢',
+            
+            // Amphibians  
+            'frog': '🐸', 'toad': '🐸', 'salamander': '🦎', 'axolotl': '🦎',
             
             // Fish
-            'shark': '🦈', 'fish': '🐠',
+            'shark': '🦈', 'barracuda': '🐟', 'pike': '🐟', 'bass': '🐟',
+            'angelfish': '🐠', 'clownfish': '🐠', 'tang': '🐠', 'pufferfish': '🐡',
+            
+            // Marine mammals
+            'whale': '🐋', 'dolphin': '🐬', 'seal': '🦭', 'walrus': '🦭', 'otter': '🦦', 'manatee': '🐋',
             
             // Arthropods
             'spider': '🕷️', 'scorpion': '🦂', 'crab': '🦀', 'lobster': '🦞',
             
             // Mythical
-            'dragon': '🐲', 'unicorn': '🦄'
+            'dragon': '🐲', 'phoenix': '🔥', 'griffin': '🦅', 'unicorn': '🦄'
         };
         
-        return emojiMap[animal.id] || '🐾';
+        return emojiMap[animal.id] || (animal.category === 'humans' ? '👤' : '🐾');
     }
 
     selectAnimal(animal) {

@@ -22,6 +22,8 @@ class AnimalModelGenerator {
         group.userData = { animalData };
 
         switch(animalData.category) {
+            case 'humans':
+                return this.createHuman(animalData, group);
             case 'mammals':
                 return this.createMammal(animalData, group);
             case 'birds':
@@ -563,6 +565,143 @@ class AnimalModelGenerator {
         }
 
         return group;
+    }
+
+    createHuman(data, group) {
+        const skinMaterial = new THREE.MeshLambertMaterial({ 
+            color: data.color || '#FFDBAC' 
+        });
+        
+        const clothingMaterial = new THREE.MeshLambertMaterial({ 
+            color: this.getDistrictColor(data.id) 
+        });
+
+        // Body (torso)
+        const bodyGeometry = new THREE.CapsuleGeometry(0.3 * data.size, 0.8 * data.size, 8, 16);
+        const body = new THREE.Mesh(bodyGeometry, clothingMaterial);
+        body.position.y = 1.0 * data.size;
+        body.castShadow = true;
+        group.add(body);
+
+        // Head
+        const headGeometry = new THREE.SphereGeometry(0.25 * data.size, 16, 12);
+        const head = new THREE.Mesh(headGeometry, skinMaterial);
+        head.position.set(0, 1.6 * data.size, 0);
+        head.castShadow = true;
+        group.add(head);
+
+        // Hair
+        if (data.hair) {
+            const hairMaterial = new THREE.MeshLambertMaterial({ color: data.hair });
+            const hairGeometry = new THREE.SphereGeometry(0.28 * data.size, 12, 8);
+            hairGeometry.scale(1, 0.8, 1);
+            const hair = new THREE.Mesh(hairGeometry, hairMaterial);
+            hair.position.set(0, 1.7 * data.size, -0.05 * data.size);
+            group.add(hair);
+        }
+
+        // Arms
+        const armGeometry = new THREE.CapsuleGeometry(0.08 * data.size, 0.6 * data.size, 6, 8);
+        const leftArm = new THREE.Mesh(armGeometry, skinMaterial);
+        const rightArm = new THREE.Mesh(armGeometry, skinMaterial);
+        leftArm.position.set(-0.4 * data.size, 1.1 * data.size, 0);
+        rightArm.position.set(0.4 * data.size, 1.1 * data.size, 0);
+        leftArm.rotation.z = Math.PI / 8;
+        rightArm.rotation.z = -Math.PI / 8;
+        leftArm.castShadow = true;
+        rightArm.castShadow = true;
+        group.add(leftArm, rightArm);
+
+        // Legs
+        const legGeometry = new THREE.CapsuleGeometry(0.1 * data.size, 0.8 * data.size, 8, 12);
+        const leftLeg = new THREE.Mesh(legGeometry, clothingMaterial);
+        const rightLeg = new THREE.Mesh(legGeometry, clothingMaterial);
+        leftLeg.position.set(-0.15 * data.size, 0.4 * data.size, 0);
+        rightLeg.position.set(0.15 * data.size, 0.4 * data.size, 0);
+        leftLeg.castShadow = true;
+        rightLeg.castShadow = true;
+        group.add(leftLeg, rightLeg);
+
+        // Add district-specific accessories
+        this.addDistrictAccessories(data, group, data.size);
+
+        return group;
+    }
+
+    getDistrictColor(humanId) {
+        const districtColors = {
+            'tribute_district1': '#FFD700', // Gold - Luxury
+            'tribute_district2': '#8B4513', // Brown - Masonry
+            'tribute_district4': '#4682B4', // Steel Blue - Fishing
+            'tribute_district11': '#228B22', // Forest Green - Agriculture
+            'tribute_district12': '#2F4F4F', // Dark Slate - Mining
+            'career_tribute': '#B22222',    // Fire Brick - Career
+            'athlete': '#4169E1',          // Royal Blue - Athletic
+            'survivor': '#556B2F'          // Dark Olive - Survivor
+        };
+        return districtColors[humanId] || '#696969'; // Default gray
+    }
+
+    addDistrictAccessories(data, group, size) {
+        const accessoryMaterial = new THREE.MeshLambertMaterial({ color: '#8B4513' });
+        
+        if (data.id.includes('district1')) {
+            // Gold jewelry
+            const jewelryMaterial = new THREE.MeshLambertMaterial({ color: '#FFD700' });
+            const necklace = new THREE.TorusGeometry(0.15 * size, 0.02 * size, 6, 12);
+            const necklaceMesh = new THREE.Mesh(necklace, jewelryMaterial);
+            necklaceMesh.position.set(0, 1.45 * size, 0.1 * size);
+            group.add(necklaceMesh);
+        }
+        
+        if (data.id.includes('district2')) {
+            // Stone/weapon accessories
+            const weaponGeometry = new THREE.BoxGeometry(0.05 * size, 0.3 * size, 0.02 * size);
+            const weapon = new THREE.Mesh(weaponGeometry, accessoryMaterial);
+            weapon.position.set(0.3 * size, 1.2 * size, -0.1 * size);
+            group.add(weapon);
+        }
+        
+        if (data.id.includes('district4')) {
+            // Fishing net pattern on clothing
+            const netMaterial = new THREE.MeshLambertMaterial({ 
+                color: '#4682B4',
+                wireframe: true,
+                transparent: true,
+                opacity: 0.6
+            });
+            const netGeometry = new THREE.SphereGeometry(0.32 * size, 8, 6);
+            const net = new THREE.Mesh(netGeometry, netMaterial);
+            net.position.y = 1.0 * size;
+            group.add(net);
+        }
+        
+        if (data.id.includes('district12')) {
+            // Mining helmet
+            const helmetGeometry = new THREE.SphereGeometry(0.27 * size, 12, 8);
+            helmetGeometry.scale(1, 0.7, 1);
+            const helmetMaterial = new THREE.MeshLambertMaterial({ color: '#2F4F4F' });
+            const helmet = new THREE.Mesh(helmetGeometry, helmetMaterial);
+            helmet.position.set(0, 1.7 * size, 0);
+            group.add(helmet);
+            
+            // Helmet light
+            const lightGeometry = new THREE.SphereGeometry(0.03 * size, 6, 4);
+            const lightMaterial = new THREE.MeshBasicMaterial({ color: '#FFFF00' });
+            const light = new THREE.Mesh(lightGeometry, lightMaterial);
+            light.position.set(0, 1.75 * size, 0.25 * size);
+            group.add(light);
+        }
+        
+        if (data.id === 'career_tribute') {
+            // Multiple weapons
+            const swordGeometry = new THREE.BoxGeometry(0.03 * size, 0.4 * size, 0.01 * size);
+            const swordMaterial = new THREE.MeshLambertMaterial({ color: '#C0C0C0' });
+            const sword = new THREE.Mesh(swordGeometry, swordMaterial);
+            sword.position.set(-0.35 * size, 1.2 * size, -0.05 * size);
+            sword.rotation.z = Math.PI / 6;
+            group.add(sword);
+        }
     }
 
     createGenericAnimal(data, group) {

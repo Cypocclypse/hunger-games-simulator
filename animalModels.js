@@ -166,6 +166,18 @@ class AnimalModelDatabase {
                 { id: 'phoenix', name: 'Phoenix', color: '#FF4500', flames: true, size: 1.2 },
                 { id: 'griffin', name: 'Griffin', color: '#D2691E', wings: 'eagle', size: 1.5 },
                 { id: 'unicorn', name: 'Unicorn', color: '#FFFFFF', horn: 'spiral', size: 1.3 }
+            ],
+            humans: [
+                { id: 'human_male', name: 'Human Male', color: '#FFDBAC', hair: '#8B4513', size: 1.0 },
+                { id: 'human_female', name: 'Human Female', color: '#FFDBAC', hair: '#654321', size: 0.95 },
+                { id: 'athlete', name: 'Athletic Human', color: '#FFDBAC', hair: '#2F4F4F', size: 1.1 },
+                { id: 'survivor', name: 'Experienced Survivor', color: '#D2B48C', hair: '#696969', size: 1.0 },
+                { id: 'tribute_district1', name: 'District 1 Tribute', color: '#FFE4B5', hair: '#FFD700', size: 1.0 },
+                { id: 'tribute_district2', name: 'District 2 Tribute', color: '#FFDBAC', hair: '#8B4513', size: 1.05 },
+                { id: 'tribute_district4', name: 'District 4 Tribute', color: '#F5DEB3', hair: '#4682B4', size: 1.0 },
+                { id: 'tribute_district11', name: 'District 11 Tribute', color: '#D2691E', hair: '#2F4F4F', size: 1.0 },
+                { id: 'tribute_district12', name: 'District 12 Tribute', color: '#DDBEA9', hair: '#654321', size: 0.98 },
+                { id: 'career_tribute', name: 'Career Tribute', color: '#FFDBAC', hair: '#B22222', size: 1.1 }
             ]
         };
         
